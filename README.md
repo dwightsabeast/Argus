@@ -2,7 +2,7 @@
 
 A self-hosted platform for researching, cataloging, and geographically mapping real-world surveillance tools. Designed for privacy-conscious individuals, researchers, and communities who want transparent, community-driven knowledge about surveillance infrastructure.
 
-**Transparency notice:** This project is openly "vibe coded" — designed and built with heavy AI assistance. The codebase should be treated as a starting point, not a finished audited product. See the [FRD](docs/) for full context.
+**Transparency notice:** This project is openly "vibe coded" — designed and built with heavy AI assistance. The codebase should be treated as a starting point, not a finished audited product. See the [FRD](Argus_FRD_v1.7.docx) for full context.
 
 ## Features
 
