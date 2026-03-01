@@ -118,11 +118,23 @@ func (app *App) ProfileDetail(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ERROR listing pins for profile %d: %v", id, err)
 	}
 
+	// Find avatar image for hero display
+	var avatarImage *models.Image
+	if profile.AvatarImageID != nil {
+		for i := range images {
+			if images[i].ID == *profile.AvatarImageID {
+				avatarImage = &images[i]
+				break
+			}
+		}
+	}
+
 	data := map[string]interface{}{
-		"Profile": profile,
-		"Images":  images,
-		"Pins":    pins,
-		"Config":  app.Config,
+		"Profile":     profile,
+		"Images":      images,
+		"AvatarImage": avatarImage,
+		"Pins":        pins,
+		"Config":      app.Config,
 	}
 
 	app.render(w, "profile_detail", data)

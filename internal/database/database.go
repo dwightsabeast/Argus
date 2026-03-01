@@ -57,6 +57,7 @@ func (db *DB) migrate() error {
 		visual_ids      TEXT NOT NULL DEFAULT '',
 		countermeasures TEXT NOT NULL DEFAULT '',
 		refs            TEXT NOT NULL DEFAULT '',
+		avatar_image_id INTEGER DEFAULT NULL REFERENCES images(id) ON DELETE SET NULL,
 		fingerprint     TEXT NOT NULL DEFAULT '',
 		deleted         INTEGER NOT NULL DEFAULT 0,
 		created_at      DATETIME NOT NULL DEFAULT (datetime('now')),
@@ -97,8 +98,24 @@ func (db *DB) migrate() error {
 	CREATE INDEX IF NOT EXISTS idx_pins_deleted ON pins(deleted);
 	CREATE INDEX IF NOT EXISTS idx_pins_updated ON pins(updated_at);
 	`
-	_, err := db.conn.Exec(schema)
-	return err
+	if _, err := db.conn.Exec(schema); err != nil {
+		return err
+	}
+
+	// Migration: add avatar_image_id to existing profiles table if missing.
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'avatar_image_id'`).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		_, err = db.conn.Exec(`ALTER TABLE profiles ADD COLUMN avatar_image_id INTEGER DEFAULT NULL REFERENCES images(id) ON DELETE SET NULL`)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // --- Profile Operations ---
@@ -151,13 +168,13 @@ func (db *DB) GetProfile(id int64) (*models.Profile, error) {
 	err := db.conn.QueryRow(`
 		SELECT id, name, category, manufacturer, deployment_ctx, observability,
 			description, use_cases, common_locations, known_vulns, visual_ids,
-			countermeasures, refs, created_at, updated_at
+			countermeasures, refs, avatar_image_id, created_at, updated_at
 		FROM profiles WHERE id = ? AND deleted = 0`, id,
 	).Scan(
 		&p.ID, &p.Name, &p.Category, &p.Manufacturer, &p.DeploymentContext,
 		&p.Observability, &p.Description, &p.UseCases, &p.CommonLocations,
 		&p.KnownVulnerabilities, &p.VisualIdentifiers, &p.Countermeasures,
-		&p.References, &p.CreatedAt, &p.UpdatedAt,
+		&p.References, &p.AvatarImageID, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -235,7 +252,7 @@ func (db *DB) ListProfiles(f models.ProfileFilter) ([]models.Profile, models.Pag
 		SELECT p.id, p.name, p.category, p.manufacturer, p.deployment_ctx,
 			p.observability, p.description, p.use_cases, p.common_locations,
 			p.known_vulns, p.visual_ids, p.countermeasures, p.refs,
-			p.created_at, p.updated_at
+			p.avatar_image_id, p.created_at, p.updated_at
 		FROM profiles p
 		WHERE `+whereClause+`
 		ORDER BY p.updated_at DESC
@@ -252,7 +269,7 @@ func (db *DB) ListProfiles(f models.ProfileFilter) ([]models.Profile, models.Pag
 			&p.ID, &p.Name, &p.Category, &p.Manufacturer, &p.DeploymentContext,
 			&p.Observability, &p.Description, &p.UseCases, &p.CommonLocations,
 			&p.KnownVulnerabilities, &p.VisualIdentifiers, &p.Countermeasures,
-			&p.References, &p.CreatedAt, &p.UpdatedAt,
+			&p.References, &p.AvatarImageID, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, pag, err
 		}
@@ -382,8 +399,24 @@ func (db *DB) ListImagesByProfile(profileID int64) ([]models.Image, error) {
 	return images, rows.Err()
 }
 
-// GetFirstImageForProfile returns the first image for a profile (for thumbnails).
+// GetFirstImageForProfile returns the avatar image if set, otherwise the first image (for thumbnails).
 func (db *DB) GetFirstImageForProfile(profileID int64) (*models.Image, error) {
+	// Check if profile has an avatar set
+	var avatarID *int64
+	_ = db.conn.QueryRow(`SELECT avatar_image_id FROM profiles WHERE id = ? AND deleted = 0`, profileID).Scan(&avatarID)
+	if avatarID != nil {
+		img := &models.Image{}
+		err := db.conn.QueryRow(`
+			SELECT id, profile_id, filename, orig_name, caption, mime_type, size_bytes, created_at
+			FROM images WHERE id = ?`, *avatarID,
+		).Scan(&img.ID, &img.ProfileID, &img.Filename, &img.OrigName,
+			&img.Caption, &img.MimeType, &img.SizeBytes, &img.CreatedAt)
+		if err == nil {
+			return img, nil
+		}
+		// Avatar image was deleted or missing; fall through to first image
+	}
+
 	img := &models.Image{}
 	err := db.conn.QueryRow(`
 		SELECT id, profile_id, filename, orig_name, caption, mime_type, size_bytes, created_at
@@ -397,6 +430,27 @@ func (db *DB) GetFirstImageForProfile(profileID int64) (*models.Image, error) {
 	return img, err
 }
 
+// SetAvatarImage sets the avatar image for a profile.
+func (db *DB) SetAvatarImage(profileID, imageID int64) error {
+	// Verify the image belongs to this profile
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM images WHERE id = ? AND profile_id = ?`, imageID, profileID).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("image %d does not belong to profile %d", imageID, profileID)
+	}
+	_, err = db.conn.Exec(`UPDATE profiles SET avatar_image_id = ?, updated_at = datetime('now') WHERE id = ? AND deleted = 0`, imageID, profileID)
+	return err
+}
+
+// ClearAvatarImage removes the avatar image setting from a profile.
+func (db *DB) ClearAvatarImage(profileID int64) error {
+	_, err := db.conn.Exec(`UPDATE profiles SET avatar_image_id = NULL, updated_at = datetime('now') WHERE id = ? AND deleted = 0`, profileID)
+	return err
+}
+
 // DeleteImage removes an image record by ID and returns the filename for disk cleanup.
 func (db *DB) DeleteImage(id int64) (string, int64, error) {
 	var filename string
@@ -405,6 +459,8 @@ func (db *DB) DeleteImage(id int64) (string, int64, error) {
 	if err != nil {
 		return "", 0, err
 	}
+	// Clear avatar reference if this image was the avatar
+	_, _ = db.conn.Exec(`UPDATE profiles SET avatar_image_id = NULL WHERE avatar_image_id = ?`, id)
 	_, err = db.conn.Exec(`DELETE FROM images WHERE id = ?`, id)
 	return filename, profileID, err
 }
@@ -503,7 +559,7 @@ func (db *DB) ProfilesSince(since time.Time, page, pageSize int) ([]models.Profi
 	rows, err := db.conn.Query(`
 		SELECT id, name, category, manufacturer, deployment_ctx, observability,
 			description, use_cases, common_locations, known_vulns, visual_ids,
-			countermeasures, refs, created_at, updated_at
+			countermeasures, refs, avatar_image_id, created_at, updated_at
 		FROM profiles
 		WHERE updated_at > ? AND deleted = 0
 		ORDER BY updated_at
@@ -520,7 +576,7 @@ func (db *DB) ProfilesSince(since time.Time, page, pageSize int) ([]models.Profi
 			&p.ID, &p.Name, &p.Category, &p.Manufacturer, &p.DeploymentContext,
 			&p.Observability, &p.Description, &p.UseCases, &p.CommonLocations,
 			&p.KnownVulnerabilities, &p.VisualIdentifiers, &p.Countermeasures,
-			&p.References, &p.CreatedAt, &p.UpdatedAt,
+			&p.References, &p.AvatarImageID, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -233,6 +233,7 @@
 
         fetch('/api/pins', {
             method: 'POST',
+            headers: {'HX-Request': 'true'},
             body: new URLSearchParams(data)
         })
         .then(function(r) {

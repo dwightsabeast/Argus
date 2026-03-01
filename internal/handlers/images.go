@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dwightsabeast/argus/internal/middleware"
@@ -154,6 +155,65 @@ func (app *App) ImageDelete(w http.ResponseWriter, r *http.Request) {
 	// Remove from disk
 	if err := app.Store.Delete(profileID, filename); err != nil {
 		log.Printf("WARNING: failed to delete image file %s: %v", filename, err)
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", fmt.Sprintf("/profiles/%d", profileID))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/profiles/%d", profileID), http.StatusSeeOther)
+}
+
+// AvatarSet handles POST /profiles/{id}/avatar (FR-P-14, FR-I-09).
+func (app *App) AvatarSet(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSuffix(r.URL.Path, "/avatar")
+	profileID := extractID(path, "/profiles/")
+	if profileID == 0 {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	imageID, err := strconv.ParseInt(r.FormValue("image_id"), 10, 64)
+	if err != nil || imageID == 0 {
+		http.Error(w, "Invalid image ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := app.DB.SetAvatarImage(profileID, imageID); err != nil {
+		log.Printf("ERROR setting avatar for profile %d: %v", profileID, err)
+		http.Error(w, "Failed to set avatar", http.StatusBadRequest)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", fmt.Sprintf("/profiles/%d", profileID))
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/profiles/%d", profileID), http.StatusSeeOther)
+}
+
+// AvatarClear handles POST /profiles/{id}/avatar/clear.
+func (app *App) AvatarClear(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimSuffix(r.URL.Path, "/avatar/clear")
+	profileID := extractID(path, "/profiles/")
+	if profileID == 0 {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if err := app.DB.ClearAvatarImage(profileID); err != nil {
+		log.Printf("ERROR clearing avatar for profile %d: %v", profileID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 
 	if r.Header.Get("HX-Request") == "true" {

@@ -19,6 +19,7 @@ type Profile struct {
 	VisualIdentifiers  string    `json:"visual_identifiers,omitempty"`  // P-10: Optional
 	Countermeasures    string    `json:"countermeasures,omitempty"`     // P-11: Optional
 	References         string    `json:"references,omitempty"`          // P-12: Optional
+	AvatarImageID      *int64    `json:"avatar_image_id,omitempty"`     // P-15: Optional FK to images
 	Fingerprint        string    `json:"-"`                             // Hashed submitter fingerprint
 	Deleted            bool      `json:"-"`                             // Soft delete flag
 	CreatedAt          time.Time `json:"created_at"`                    // P-13: Auto

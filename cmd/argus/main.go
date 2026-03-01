@@ -81,6 +81,10 @@ func main() {
 			app.ProfileDelete(w, r)
 		case strings.HasSuffix(path, "/images"):
 			app.ImageUpload(w, r)
+		case strings.HasSuffix(path, "/avatar/clear"):
+			app.AvatarClear(w, r)
+		case strings.HasSuffix(path, "/avatar"):
+			app.AvatarSet(w, r)
 		default:
 			app.ProfileDetail(w, r)
 		}
@@ -197,6 +201,12 @@ func loadTemplates() map[string]*template.Template {
 			return template.JS(b)
 		},
 		"printf": fmt.Sprintf,
+		"derefInt64": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
 	}
 
 	templates := make(map[string]*template.Template)
