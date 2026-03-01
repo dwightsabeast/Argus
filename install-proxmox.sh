@@ -159,15 +159,15 @@ info "Container storage: ${CT_STORAGE}"
 # DOWNLOAD TEMPLATE
 # ==============================================================================
 TEMPLATE_NAME="debian-12-standard"
-TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1)
+TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1 || true)
 
 if [[ -z "$TEMPLATE_FILE" ]]; then
     info "Downloading Debian 12 template..."
     pveam update &>/dev/null || true
-    AVAILABLE=$(pveam available --section system 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $2}' | sort -V | tail -1)
+    AVAILABLE=$(pveam available --section system 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $2}' | sort -V | tail -1 || true)
     [[ -z "$AVAILABLE" ]] && error "Cannot find Debian 12 template. Check internet connectivity."
-    pveam download "$TMPL_STORAGE" "$AVAILABLE" &>/dev/null || error "Template download failed."
-    TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1)
+    pveam download "$TMPL_STORAGE" "$AVAILABLE" || error "Template download failed."
+    TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1 || true)
     [[ -z "$TEMPLATE_FILE" ]] && error "Template downloaded but not found in storage."
 fi
 info "Template: ${TEMPLATE_FILE}"
