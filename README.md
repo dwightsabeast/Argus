@@ -24,7 +24,7 @@ A self-hosted platform for researching, cataloging, and geographically mapping r
 
 ```bash
 # Clone the repo
-git clone https://github.com/argus-platform/argus.git
+git clone https://github.com/dwightsabeast/argus.git
 cd argus
 
 # Download frontend dependencies (HTMX, Leaflet, MarkerCluster)
@@ -44,7 +44,7 @@ Visit `http://localhost:8080` to access the profile browser.
 Run the one-command installer on your Proxmox host:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/argus-platform/argus/main/install-proxmox.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/dwightsabeast/argus/main/install-proxmox.sh)"
 ```
 
 The installer will prompt for hostname, IP, resource allocation, and storage sizing, then create and configure the LXC automatically.
