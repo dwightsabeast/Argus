@@ -224,37 +224,74 @@ info "IP address: ${IP_ADDR}"
 # INSTALL ARGUS INSIDE CONTAINER
 # ==============================================================================
 echo ""
-info "Installing ${APP} inside container..."
+info "Installing dependencies..."
 
 pct exec "$CTID" -- bash -c "
     set -euo pipefail
 
-    # Minimal deps
-    apt-get update -qq &>/dev/null
-    apt-get install -y -qq curl ca-certificates &>/dev/null
+    # Install build deps
+    apt-get update -qq
+    apt-get install -y -qq curl ca-certificates git wget
+" &>/dev/null
 
-    # Directory structure
-    mkdir -p /data/images /data/db /opt/argus/static /opt/argus/templates
+info "Installing Go toolchain..."
 
-    # Download binary (placeholder — uncomment for release builds)
-    # ARCH=\$(dpkg --print-architecture)
-    # case \"\$ARCH\" in
-    #     amd64) BINARY=\"argus-linux-amd64\" ;;
-    #     arm64) BINARY=\"argus-linux-arm64\" ;;
-    #     *)     echo \"Unsupported architecture: \$ARCH\"; exit 1 ;;
-    # esac
-    # curl -fsSL \"https://github.com/dwightsabeast/argus/releases/latest/download/\${BINARY}\" -o /opt/argus/argus
-    # chmod +x /opt/argus/argus
+pct exec "$CTID" -- bash -c '
+    set -euo pipefail
 
-    # Placeholder binary until first release
-    cat > /opt/argus/argus <<'PLACEHOLDER'
-#!/bin/bash
-echo \"Argus placeholder — replace with real binary from GitHub Releases.\"
-echo \"  Build:  cd argus && make build\"
-echo \"  Copy:   pct push ${CTID} ./build/argus /opt/argus/argus\"
-echo \"  Start:  systemctl restart argus\"
-PLACEHOLDER
-    chmod +x /opt/argus/argus
+    ARCH=$(dpkg --print-architecture)
+    GO_VERSION="1.23.6"
+    case "$ARCH" in
+        amd64) GO_ARCH="linux-amd64" ;;
+        arm64) GO_ARCH="linux-arm64" ;;
+        *)     echo "Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+
+    wget -q "https://go.dev/dl/go${GO_VERSION}.${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm /tmp/go.tar.gz
+' &>/dev/null
+
+info "Cloning Argus repository..."
+
+pct exec "$CTID" -- bash -c '
+    set -euo pipefail
+    export PATH="/usr/local/go/bin:$PATH"
+
+    git clone --depth 1 https://github.com/dwightsabeast/argus.git /tmp/argus-build
+' &>/dev/null
+
+info "Downloading frontend dependencies..."
+
+pct exec "$CTID" -- bash -c '
+    set -euo pipefail
+    cd /tmp/argus-build
+    bash download-deps.sh
+' &>/dev/null
+
+info "Building Argus binary (this may take a minute)..."
+
+pct exec "$CTID" -- bash -c '
+    set -euo pipefail
+    export PATH="/usr/local/go/bin:$PATH"
+    export GOPATH="/tmp/go"
+    export GOCACHE="/tmp/go-cache"
+    cd /tmp/argus-build
+
+    CGO_ENABLED=0 go build -o /opt/argus/argus ./cmd/argus/
+' &>/dev/null
+
+info "Installing application files..."
+
+pct exec "$CTID" -- bash -c "
+    set -euo pipefail
+
+    # Copy templates and static assets
+    cp -r /tmp/argus-build/templates /opt/argus/
+    cp -r /tmp/argus-build/static /opt/argus/
+
+    # Create data directories
+    mkdir -p /data/images /data/db
 
     # Environment config
     cat > /opt/argus/argus.env <<ENVFILE
@@ -290,7 +327,28 @@ SERVICE
     systemctl enable argus.service &>/dev/null
 " &>/dev/null
 
-info "${APP} installed."
+info "Cleaning up build artifacts..."
+
+pct exec "$CTID" -- bash -c '
+    rm -rf /usr/local/go /tmp/argus-build /tmp/go /tmp/go-cache
+    apt-get remove -y -qq git wget &>/dev/null || true
+    apt-get autoremove -y -qq &>/dev/null || true
+    apt-get clean &>/dev/null || true
+' &>/dev/null
+
+info "Starting Argus service..."
+
+pct exec "$CTID" -- systemctl start argus &>/dev/null
+
+# Give the service a moment to bind
+sleep 2
+
+# Verify it's actually running
+if pct exec "$CTID" -- systemctl is-active argus &>/dev/null; then
+    info "${APP} is running."
+else
+    warn "${APP} service failed to start. Check logs: pct exec ${CTID} -- journalctl -u argus -n 20"
+fi
 
 # ==============================================================================
 # SUMMARY
@@ -310,10 +368,8 @@ echo -e ""
 echo -e "  ${BLD}Access:${NC}   ${GN}http://${IP_ADDR}:8080${NC}"
 echo -e ""
 echo -e "  ${BLD}Next steps:${NC}"
-echo -e "    1. Build or download the Argus binary"
-echo -e "    2. pct push ${CTID} argus-linux-amd64 /opt/argus/argus"
-echo -e "    3. pct exec ${CTID} -- systemctl start argus"
-echo -e "    4. Set up a reverse proxy with TLS"
+echo -e "    1. Visit the URL above to start using Argus"
+echo -e "    2. Set up a reverse proxy with TLS for production use"
 echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
