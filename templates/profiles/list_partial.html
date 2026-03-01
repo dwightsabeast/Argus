@@ -1,0 +1,51 @@
+{{define "profile_list_partial"}}
+<div class="profile-list">
+    {{if .Profiles}}
+        {{range .Profiles}}
+        <a href="/profiles/{{.ID}}" class="profile-card">
+            {{if .ThumbnailURL}}
+            <div class="profile-card-thumb">
+                <img src="{{.ThumbnailURL}}" alt="{{.Name}}" loading="lazy">
+            </div>
+            {{else}}
+            <div class="profile-card-thumb profile-card-thumb--empty">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            {{end}}
+            <div class="profile-card-body">
+                <div class="profile-card-header">
+                    <h3 class="profile-card-name">{{.Name}}</h3>
+                    <span class="badge badge--category">{{.Category}}</span>
+                </div>
+                <div class="profile-card-meta">
+                    <span class="meta-item">{{.Manufacturer}}</span>
+                    <span class="meta-sep">·</span>
+                    <span class="meta-item meta-item--obs obs--{{.Observability | lower}}">{{.Observability}}</span>
+                </div>
+                {{if .Description}}
+                <p class="profile-card-excerpt">{{.Description | truncate 120}}</p>
+                {{end}}
+            </div>
+        </a>
+        {{end}}
+    {{else}}
+        <div class="empty-state">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <p class="empty-state-text">No surveillance tools found matching your filters.</p>
+            <a href="/profiles/new" class="btn btn--primary">Add the first one</a>
+        </div>
+    {{end}}
+</div>
+
+{{if and .Pagination (gt .Pagination.TotalPages 1)}}
+<nav class="pagination" aria-label="Page navigation">
+    {{if .Pagination.HasPrev}}
+    <a href="?page={{sub .Pagination.CurrentPage 1}}" class="pagination-link" hx-get="/profiles?page={{sub .Pagination.CurrentPage 1}}" hx-target="#profile-list-container" hx-push-url="true">← Previous</a>
+    {{end}}
+    <span class="pagination-info">Page {{.Pagination.CurrentPage}} of {{.Pagination.TotalPages}}</span>
+    {{if .Pagination.HasNext}}
+    <a href="?page={{add .Pagination.CurrentPage 1}}" class="pagination-link" hx-get="/profiles?page={{add .Pagination.CurrentPage 1}}" hx-target="#profile-list-container" hx-push-url="true">Next →</a>
+    {{end}}
+</nav>
+{{end}}
+{{end}}

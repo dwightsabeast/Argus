@@ -1,0 +1,232 @@
+{{define "profile_detail"}}
+{{template "layout" .}}
+{{end}}
+
+{{define "title"}}{{.Profile.Name}}{{end}}
+
+{{define "content"}}
+<div class="detail-page">
+    <div class="detail-header">
+        <div class="detail-header-top">
+            <a href="/profiles" class="btn btn--ghost btn--sm">← Back to Index</a>
+            <div class="detail-actions">
+                <a href="/profiles/{{.Profile.ID}}/edit" class="btn btn--outline btn--sm">Edit</a>
+                <form method="POST" action="/profiles/{{.Profile.ID}}/delete" onsubmit="return confirm('Are you sure you want to delete this profile? This action can be undone by an administrator.')">
+                    <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+                </form>
+            </div>
+        </div>
+        <h1 class="detail-title">{{.Profile.Name}}</h1>
+        <div class="detail-badges">
+            <span class="badge badge--category">{{.Profile.Category}}</span>
+            <span class="badge badge--obs obs--{{.Profile.Observability | lower}}">{{.Profile.Observability}}</span>
+            {{if .Profile.DeploymentContext}}
+            <span class="badge badge--context">{{.Profile.DeploymentContext}}</span>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="detail-body">
+        <!-- Core Info -->
+        <section class="detail-section">
+            <div class="detail-field">
+                <dt class="detail-label">Manufacturer</dt>
+                <dd class="detail-value">{{.Profile.Manufacturer}}</dd>
+            </div>
+
+            {{if .Profile.Description}}
+            <div class="detail-field">
+                <dt class="detail-label">Description</dt>
+                <dd class="detail-value detail-value--long">{{.Profile.Description}}</dd>
+            </div>
+            {{end}}
+
+            {{if .Profile.UseCases}}
+            <div class="detail-field">
+                <dt class="detail-label">Use Cases</dt>
+                <dd class="detail-value detail-value--long">{{.Profile.UseCases}}</dd>
+            </div>
+            {{end}}
+
+            {{if .Profile.CommonLocations}}
+            <div class="detail-field">
+                <dt class="detail-label">Common Locations</dt>
+                <dd class="detail-value">{{.Profile.CommonLocations}}</dd>
+            </div>
+            {{end}}
+        </section>
+
+        <!-- Identification & Countermeasures -->
+        {{if or .Profile.VisualIdentifiers .Profile.Countermeasures .Profile.KnownVulnerabilities}}
+        <section class="detail-section">
+            <h2 class="detail-section-title">Identification & Countermeasures</h2>
+
+            {{if .Profile.VisualIdentifiers}}
+            <div class="detail-field">
+                <dt class="detail-label">Visual Identifiers</dt>
+                <dd class="detail-value detail-value--long">{{.Profile.VisualIdentifiers}}</dd>
+            </div>
+            {{end}}
+
+            {{if .Profile.KnownVulnerabilities}}
+            <div class="detail-field">
+                <dt class="detail-label">Known Vulnerabilities</dt>
+                <dd class="detail-value">
+                    <div class="tag-list">
+                        {{range splitComma .Profile.KnownVulnerabilities}}
+                        <span class="tag tag--vuln">{{.}}</span>
+                        {{end}}
+                    </div>
+                </dd>
+            </div>
+            {{end}}
+
+            {{if .Profile.Countermeasures}}
+            <div class="detail-field">
+                <dt class="detail-label">Countermeasures</dt>
+                <dd class="detail-value detail-value--long">{{.Profile.Countermeasures}}</dd>
+            </div>
+            {{end}}
+        </section>
+        {{end}}
+
+        <!-- References -->
+        {{if .Profile.References}}
+        <section class="detail-section">
+            <h2 class="detail-section-title">References</h2>
+            <div class="detail-value detail-value--long">{{.Profile.References}}</div>
+        </section>
+        {{end}}
+
+        <!-- Image Gallery (FR-I-05) -->
+        <section class="detail-section">
+            <h2 class="detail-section-title">Images</h2>
+
+            {{if .Images}}
+            <div class="gallery">
+                {{range .Images}}
+                <div class="gallery-item" onclick="openLightbox('/images/file/{{.ProfileID}}/{{.Filename}}', '{{.Caption}}')">
+                    <img src="/images/file/{{.ProfileID}}/{{.Filename}}" alt="{{if .Caption}}{{.Caption}}{{else}}{{$.Profile.Name}}{{end}}" loading="lazy">
+                    {{if .Caption}}
+                    <div class="gallery-caption">{{.Caption}}</div>
+                    {{end}}
+                    <form method="POST" action="/images/{{.ID}}/delete" class="gallery-delete" onclick="event.stopPropagation()" onsubmit="return confirm('Delete this image? The file will be permanently removed.')">
+                        <button type="submit" class="btn btn--icon btn--danger-ghost" title="Delete image">
+                            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </form>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <p class="detail-empty">No images uploaded yet.</p>
+            {{end}}
+
+            <!-- Upload Form (FR-I-01) -->
+            <form method="POST" action="/profiles/{{.Profile.ID}}/images" enctype="multipart/form-data" class="upload-form">
+                <div class="form-group">
+                    <label class="form-label">Upload Images <span class="form-optional">(JPEG, PNG, or WebP — max {{.Config.ImageMaxSizeMB}} MB each)</span></label>
+                    <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple class="form-file">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="caption">Caption <span class="form-optional">optional</span></label>
+                    <input type="text" name="caption" id="caption" class="form-input" maxlength="500" placeholder="Describe what's shown in the image…">
+                </div>
+                <button type="submit" class="btn btn--primary btn--sm">Upload</button>
+            </form>
+        </section>
+
+        <!-- Mini-Map (FR-B-08) - lazy loaded -->
+        <section class="detail-section" id="mini-map-section">
+            <h2 class="detail-section-title">Sighting Locations</h2>
+            {{if .Pins}}
+            <div id="mini-map" class="mini-map" data-pins='{{pinsJSON .Pins}}' data-tile-url="{{.Config.TileURL}}" data-tile-attrib="{{.Config.TileAttribution}}">
+                <noscript>
+                    <p>{{len .Pins}} location{{if gt (len .Pins) 1}}s{{end}} reported. Enable JavaScript to view the map.</p>
+                </noscript>
+            </div>
+            {{else}}
+            <p class="detail-empty">No sightings reported yet. <a href="/map?new_pin=true&profile_id={{.Profile.ID}}">Add one on the map</a>.</p>
+            {{end}}
+        </section>
+
+        <div class="detail-meta">
+            <span>Created: {{.Profile.CreatedAt.Format "Jan 2, 2006"}}</span>
+            <span>Updated: {{.Profile.UpdatedAt.Format "Jan 2, 2006"}}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox" onclick="closeLightbox()">
+    <button class="lightbox-close" onclick="closeLightbox()" aria-label="Close">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <img id="lightbox-img" src="" alt="">
+    <div id="lightbox-caption" class="lightbox-caption"></div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+function openLightbox(src, caption) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox-caption').textContent = caption || '';
+    document.getElementById('lightbox').classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('active');
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeLightbox();
+});
+
+// Lazy-load mini-map on scroll (FR-B-08)
+(function() {
+    var mapEl = document.getElementById('mini-map');
+    if (!mapEl) return;
+
+    var loaded = false;
+    var observer = new IntersectionObserver(function(entries) {
+        if (entries[0].isIntersecting && !loaded) {
+            loaded = true;
+            observer.disconnect();
+            loadMiniMap(mapEl);
+        }
+    }, { rootMargin: '200px' });
+    observer.observe(mapEl);
+
+    function loadMiniMap(el) {
+        // Load Leaflet dynamically
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/static/css/leaflet.css';
+        document.head.appendChild(link);
+
+        var script = document.createElement('script');
+        script.src = '/static/js/leaflet.js';
+        script.onload = function() {
+            var pins = JSON.parse(el.dataset.pins || '[]');
+            var map = L.map('mini-map').setView([20, 0], 2);
+            L.tileLayer(el.dataset.tileUrl, {
+                attribution: el.dataset.tileAttrib,
+                maxZoom: 18
+            }).addTo(map);
+
+            var bounds = [];
+            pins.forEach(function(pin) {
+                var marker = L.marker([pin.lat, pin.lng]).addTo(map);
+                if (pin.label) marker.bindPopup(pin.label);
+                bounds.push([pin.lat, pin.lng]);
+            });
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [30, 30] });
+            }
+        };
+        document.head.appendChild(script);
+    }
+})();
+</script>
+{{end}}

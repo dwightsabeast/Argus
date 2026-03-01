@@ -1,0 +1,100 @@
+{{define "profile_list"}}
+{{template "layout" .}}
+{{end}}
+
+{{define "title"}}Surveillance Index{{end}}
+
+{{define "main_class"}}content content--browser{{end}}
+
+{{define "content"}}
+<div class="browser">
+    <!-- Filter Sidebar (FR-B-04) -->
+    <aside class="sidebar" id="filter-sidebar">
+        <div class="sidebar-header">
+            <h2 class="sidebar-title">Filters</h2>
+            <button class="sidebar-close" onclick="document.getElementById('filter-sidebar').classList.remove('open')" aria-label="Close filters">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <form id="filter-form" hx-get="/profiles" hx-target="#profile-list-container" hx-trigger="change, input delay:300ms from:#search-input" hx-push-url="true" hx-swap="innerHTML">
+
+            <!-- Text Search (FR-P-06, FR-B-03) -->
+            <div class="filter-group">
+                <label class="filter-label" for="search-input">Search</label>
+                <input type="text" id="search-input" name="search" class="filter-input" placeholder="Name, manufacturer, keyword…" value="{{.Filter.Search}}" autocomplete="off">
+            </div>
+
+            <!-- Category Filter (FR-P-07) -->
+            <div class="filter-group">
+                <label class="filter-label" for="filter-category">Category</label>
+                <select id="filter-category" name="category" class="filter-select">
+                    <option value="">All categories</option>
+                    {{range .Categories}}
+                    <option value="{{.}}" {{if eq . $.Filter.Category}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <!-- Manufacturer Filter (FR-P-08) -->
+            <div class="filter-group">
+                <label class="filter-label" for="filter-manufacturer">Manufacturer</label>
+                <select id="filter-manufacturer" name="manufacturer" class="filter-select">
+                    <option value="">All manufacturers</option>
+                    {{range .Manufacturers}}
+                    <option value="{{.}}" {{if eq . $.Filter.Manufacturer}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <!-- Deployment Context Filter (FR-P-09) -->
+            <div class="filter-group">
+                <label class="filter-label" for="filter-deployment">Deployed by</label>
+                <select id="filter-deployment" name="deployment_context" class="filter-select">
+                    <option value="">All contexts</option>
+                    {{range .DeploymentContexts}}
+                    <option value="{{.}}" {{if eq . $.Filter.DeploymentContext}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <!-- Observability Filter (FR-P-10) -->
+            <div class="filter-group">
+                <label class="filter-label" for="filter-observability">Observability</label>
+                <select id="filter-observability" name="observability" class="filter-select">
+                    <option value="">All levels</option>
+                    {{range .ObservabilityLevels}}
+                    <option value="{{.}}" {{if eq . $.Filter.Observability}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <noscript>
+                <div class="filter-group">
+                    <button type="submit" class="btn btn--primary btn--full">Apply Filters</button>
+                </div>
+            </noscript>
+
+            <!-- Clear Filters (FR-P-13) -->
+            <div class="filter-group">
+                <a href="/profiles" class="btn btn--outline btn--full btn--sm">Clear All Filters</a>
+            </div>
+        </form>
+    </aside>
+
+    <!-- Profile List (FR-B-05, FR-B-06) -->
+    <div class="browser-main">
+        <div class="browser-toolbar">
+            <button class="btn btn--outline btn--sm sidebar-toggle-btn" onclick="document.getElementById('filter-sidebar').classList.toggle('open')">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/></svg>
+                Filters
+            </button>
+            <span class="browser-count">{{.Pagination.TotalItems}} tool{{if ne .Pagination.TotalItems 1}}s{{end}}</span>
+        </div>
+
+        <div id="profile-list-container">
+            {{template "profile_list_partial" .}}
+        </div>
+    </div>
+</div>
+{{end}}

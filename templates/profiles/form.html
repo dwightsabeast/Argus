@@ -1,0 +1,132 @@
+{{define "profile_form"}}
+{{template "layout" .}}
+{{end}}
+
+{{define "title"}}{{if .IsEdit}}Edit {{.Profile.Name}}{{else}}New Profile{{end}}{{end}}
+
+{{define "content"}}
+<div class="form-page">
+    <div class="form-page-header">
+        <a href="{{if .IsEdit}}/profiles/{{.Profile.ID}}{{else}}/profiles{{end}}" class="btn btn--ghost btn--sm">← Cancel</a>
+        <h1 class="form-page-title">{{if .IsEdit}}Edit Profile{{else}}New Surveillance Tool Profile{{end}}</h1>
+    </div>
+
+    {{if .Error}}
+    <div class="alert alert--error">{{.Error}}</div>
+    {{end}}
+
+    <form method="POST" action="{{if .IsEdit}}/profiles/{{.Profile.ID}}/edit{{else}}/profiles/new{{end}}" class="profile-form">
+
+        <!-- Required Fields -->
+        <fieldset class="form-fieldset">
+            <legend class="form-legend">Required Information</legend>
+
+            <div class="form-group">
+                <label class="form-label" for="name">Name</label>
+                <input type="text" id="name" name="name" class="form-input" required value="{{.Profile.Name}}" placeholder="e.g., ALPR Camera, Stingray Device">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label" for="category">Category</label>
+                    <select id="category" name="category" class="form-select" required>
+                        <option value="">Select a category…</option>
+                        {{range .Categories}}
+                        <option value="{{.}}" {{if eq . $.Profile.Category}}selected{{end}}>{{.}}</option>
+                        {{end}}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="observability">Observability</label>
+                    <select id="observability" name="observability" class="form-select" required>
+                        <option value="">Select level…</option>
+                        {{range .ObservabilityLevels}}
+                        <option value="{{.}}" {{if eq . $.Profile.Observability}}selected{{end}}>{{.}}</option>
+                        {{end}}
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="manufacturer">Manufacturer</label>
+                <input type="text" id="manufacturer" name="manufacturer" class="form-input" required value="{{.Profile.Manufacturer}}" placeholder="e.g., Axon, Harris Corporation, Hikvision" list="manufacturer-list" autocomplete="off">
+                <datalist id="manufacturer-list">
+                    <!-- Populated dynamically via autocomplete -->
+                </datalist>
+            </div>
+        </fieldset>
+
+        <!-- Optional Fields -->
+        <fieldset class="form-fieldset">
+            <legend class="form-legend">Context & Details</legend>
+
+            <div class="form-group">
+                <label class="form-label" for="deployment_context">Deployment Context <span class="form-optional">optional</span></label>
+                <select id="deployment_context" name="deployment_context" class="form-select">
+                    <option value="">Not specified</option>
+                    {{range .DeploymentContexts}}
+                    <option value="{{.}}" {{if eq . $.Profile.DeploymentContext}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="description">Description <span class="form-optional">optional</span></label>
+                <textarea id="description" name="description" class="form-textarea" rows="4" placeholder="What is this tool and how does it work?">{{.Profile.Description}}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="use_cases">Use Cases <span class="form-optional">optional</span></label>
+                <textarea id="use_cases" name="use_cases" class="form-textarea" rows="3" placeholder="How and why is this tool deployed?">{{.Profile.UseCases}}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="common_locations">Common Locations <span class="form-optional">optional</span></label>
+                <input type="text" id="common_locations" name="common_locations" class="form-input" value="{{.Profile.CommonLocations}}" placeholder="e.g., highways, airports, retail stores">
+            </div>
+        </fieldset>
+
+        <!-- Identification -->
+        <fieldset class="form-fieldset">
+            <legend class="form-legend">Identification & Countermeasures</legend>
+
+            <div class="form-group">
+                <label class="form-label" for="visual_identifiers">Visual Identifiers <span class="form-optional">optional</span></label>
+                <textarea id="visual_identifiers" name="visual_identifiers" class="form-textarea" rows="3" placeholder="Physical characteristics that help identify this tool in the field">{{.Profile.VisualIdentifiers}}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Known Vulnerabilities <span class="form-optional">optional</span></label>
+                <div class="checkbox-grid">
+                    {{range .VulnerabilityTags}}
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="known_vulnerabilities" value="{{.}}" {{if contains $.Profile.KnownVulnerabilities .}}checked{{end}}>
+                        <span>{{.}}</span>
+                    </label>
+                    {{end}}
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="countermeasures">Countermeasures <span class="form-optional">optional</span></label>
+                <textarea id="countermeasures" name="countermeasures" class="form-textarea" rows="3" placeholder="Known methods to detect, avoid, or mitigate this tool">{{.Profile.Countermeasures}}</textarea>
+            </div>
+        </fieldset>
+
+        <!-- References -->
+        <fieldset class="form-fieldset">
+            <legend class="form-legend">References</legend>
+            <div class="form-group">
+                <label class="form-label" for="references">Source Links & Citations <span class="form-optional">optional</span></label>
+                <textarea id="references" name="references" class="form-textarea" rows="3" placeholder="URLs, news articles, or documentation links (one per line)">{{.Profile.References}}</textarea>
+            </div>
+        </fieldset>
+
+        <div class="form-actions">
+            <a href="{{if .IsEdit}}/profiles/{{.Profile.ID}}{{else}}/profiles{{end}}" class="btn btn--outline">Cancel</a>
+            <button type="submit" class="btn btn--primary">{{if .IsEdit}}Save Changes{{else}}Create Profile{{end}}</button>
+        </div>
+    </form>
+</div>
+{{end}}

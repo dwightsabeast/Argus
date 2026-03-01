@@ -1,0 +1,5 @@
+{{define "profile_search_results"}}
+{{range .Profiles}}
+<option value="{{.ID}}">{{.Name}} — {{.Manufacturer}} ({{.Category}})</option>
+{{end}}
+{{end}}

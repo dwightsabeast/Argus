@@ -1,0 +1,275 @@
+{{define "map_view"}}
+{{template "layout" .}}
+{{end}}
+
+{{define "title"}}Map — Surveillance Sightings{{end}}
+
+{{define "main_class"}}content content--map{{end}}
+
+{{define "head"}}
+<link rel="stylesheet" href="/static/css/leaflet.css">
+<link rel="stylesheet" href="/static/css/markercluster.css">
+{{end}}
+
+{{define "content"}}
+<div class="map-container">
+    <!-- Map Sidebar - Filter & Pin Controls -->
+    <aside class="map-sidebar" id="map-sidebar">
+        <div class="sidebar-header">
+            <h2 class="sidebar-title">Map Controls</h2>
+            <button class="sidebar-close" onclick="toggleMapSidebar()" aria-label="Close">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <!-- Filter Controls (FR-M-10) -->
+        <div class="map-panel" id="filter-panel">
+            <h3 class="map-panel-title">Filter Pins</h3>
+            <div class="filter-group">
+                <label class="filter-label" for="map-filter-category">Category</label>
+                <select id="map-filter-category" class="filter-select" onchange="reloadPins()">
+                    <option value="">All categories</option>
+                    {{range .Categories}}
+                    <option value="{{.}}">{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label class="filter-label" for="map-filter-manufacturer">Manufacturer</label>
+                <select id="map-filter-manufacturer" class="filter-select" onchange="reloadPins()">
+                    <option value="">All manufacturers</option>
+                    {{range .Manufacturers}}
+                    <option value="{{.}}">{{.}}</option>
+                    {{end}}
+                </select>
+            </div>
+        </div>
+
+        <!-- Pin Creation Form (FR-M-05 through FR-M-08) -->
+        <div class="map-panel" id="pin-panel">
+            <h3 class="map-panel-title">Report a Sighting</h3>
+            <form id="pin-form" method="POST" action="/api/pins">
+                <!-- Profile Selection (FR-M-06) -->
+                <div class="form-group">
+                    <label class="form-label" for="pin-profile">Linked Profile</label>
+                    <select id="pin-profile" name="profile_id" class="form-select" required>
+                        <option value="">Select a surveillance tool…</option>
+                        {{range .Profiles}}
+                        <option value="{{.ID}}" {{if eq (printf "%d" .ID) $.PreselectedID}}selected{{end}}>{{.Name}} — {{.Manufacturer}}</option>
+                        {{end}}
+                    </select>
+                    <!-- FR-M-07: Create new profile link -->
+                    <a href="/profiles/new?return_to=pin" class="form-help-link">Tool not listed? Create a new profile first →</a>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="pin-lat">Latitude</label>
+                        <input type="number" id="pin-lat" name="latitude" class="form-input" step="any" min="-90" max="90" required placeholder="e.g., 40.7128">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="pin-lng">Longitude</label>
+                        <input type="number" id="pin-lng" name="longitude" class="form-input" step="any" min="-180" max="180" required placeholder="e.g., -74.0060">
+                    </div>
+                </div>
+                <p class="form-hint">Click the map to set coordinates, or enter them manually.</p>
+
+                <div class="form-group">
+                    <label class="form-label" for="pin-label">Location Label <span class="form-optional">optional</span></label>
+                    <input type="text" id="pin-label" name="location_label" class="form-input" placeholder="e.g., Main St & 5th Ave, Downtown">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="pin-notes">Notes <span class="form-optional">optional</span></label>
+                    <textarea id="pin-notes" name="notes" class="form-textarea" rows="2" placeholder="e.g., mounted on traffic light pole, facing north"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="pin-date">Date Observed <span class="form-optional">optional</span></label>
+                    <input type="date" id="pin-date" name="date_observed" class="form-input">
+                </div>
+
+                <button type="submit" class="btn btn--primary btn--full" id="pin-submit">Submit Sighting</button>
+            </form>
+        </div>
+    </aside>
+
+    <!-- Map -->
+    <div class="map-area">
+        <button class="map-sidebar-toggle" onclick="toggleMapSidebar()" aria-label="Toggle sidebar">
+            <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div id="map" class="map-canvas"></div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/leaflet.js"></script>
+<script src="/static/js/leaflet.markercluster.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    // Category colors for pin icons (FR-M-09)
+    var categoryColors = {
+        'Physical': '#e74c3c',
+        'Digital': '#3498db',
+        'Audio': '#9b59b6',
+        'Biometric': '#e67e22',
+        'Network': '#2ecc71',
+        'Aerial': '#1abc9c',
+        'Tracking': '#f39c12',
+        'Other': '#95a5a6'
+    };
+
+    function pinIcon(category) {
+        var color = categoryColors[category] || '#95a5a6';
+        return L.divIcon({
+            className: 'pin-icon',
+            html: '<div style="background:' + color + ';width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        });
+    }
+
+    // Initialize map (FR-M-01)
+    var map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('{{.TileURL}}', {
+        attribution: '{{.TileAttrib}}',
+        maxZoom: 18
+    }).addTo(map);
+
+    // Marker cluster group (FR-M-03)
+    var markers = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true
+    });
+    map.addLayer(markers);
+
+    // Placement marker for new pins
+    var placementMarker = null;
+
+    // Click map to set coordinates (FR-M-05)
+    map.on('click', function(e) {
+        var lat = e.latlng.lat.toFixed(6);
+        var lng = e.latlng.lng.toFixed(6);
+        document.getElementById('pin-lat').value = lat;
+        document.getElementById('pin-lng').value = lng;
+
+        if (placementMarker) {
+            placementMarker.setLatLng(e.latlng);
+        } else {
+            placementMarker = L.marker(e.latlng, {
+                icon: L.divIcon({
+                    className: 'pin-icon pin-icon--new',
+                    html: '<div style="background:#ff4444;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.5)"></div>',
+                    iconSize: [22, 22],
+                    iconAnchor: [11, 11]
+                })
+            }).addTo(map);
+        }
+    });
+
+    // Load pins
+    function loadPins() {
+        var params = new URLSearchParams();
+        var cat = document.getElementById('map-filter-category').value;
+        var mfr = document.getElementById('map-filter-manufacturer').value;
+        if (cat) params.set('category', cat);
+        if (mfr) params.set('manufacturer', mfr);
+
+        fetch('/api/pins?' + params.toString())
+            .then(function(r) { return r.json(); })
+            .then(function(geojson) {
+                markers.clearLayers();
+                if (!geojson.features) return;
+
+                geojson.features.forEach(function(feature) {
+                    var props = feature.properties;
+                    var coords = feature.geometry.coordinates;
+                    var marker = L.marker([coords[1], coords[0]], {
+                        icon: pinIcon(props.category)
+                    });
+
+                    // Tooltip with profile link (FR-M-04)
+                    var popup = '<div class="pin-popup">' +
+                        '<strong><a href="/profiles/' + props.profile_id + '">' + escHtml(props.profile_name) + '</a></strong>';
+                    if (props.location_label) popup += '<br><span class="pin-popup-label">' + escHtml(props.location_label) + '</span>';
+                    if (props.notes) popup += '<br><span class="pin-popup-notes">' + escHtml(props.notes) + '</span>';
+                    if (props.date_observed) popup += '<br><small>Observed: ' + escHtml(props.date_observed) + '</small>';
+                    popup += '<br><form method="POST" action="/api/pins/' + props.id + '/delete" onsubmit="return confirm(\'Delete this pin?\')" style="margin-top:6px">' +
+                        '<button type="submit" class="btn btn--danger btn--xs">Delete Pin</button></form>';
+                    popup += '</div>';
+                    marker.bindPopup(popup);
+
+                    markers.addLayer(marker);
+                });
+            })
+            .catch(function(err) {
+                console.error('Failed to load pins:', err);
+            });
+    }
+
+    window.reloadPins = loadPins;
+
+    function toggleMapSidebar() {
+        document.getElementById('map-sidebar').classList.toggle('open');
+    }
+    window.toggleMapSidebar = toggleMapSidebar;
+
+    function escHtml(s) {
+        if (!s) return '';
+        var div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+    }
+
+    // Pin form submission
+    document.getElementById('pin-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var form = e.target;
+        var data = new FormData(form);
+
+        fetch('/api/pins', {
+            method: 'POST',
+            body: new URLSearchParams(data)
+        })
+        .then(function(r) {
+            if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
+            return r.json();
+        })
+        .then(function(result) {
+            if (result.success) {
+                form.reset();
+                if (placementMarker) {
+                    map.removeLayer(placementMarker);
+                    placementMarker = null;
+                }
+                loadPins();
+                showToast('Sighting reported successfully');
+            }
+        })
+        .catch(function(err) {
+            showToast(err.message || 'Failed to submit pin', 'error');
+        });
+    });
+
+    function showToast(msg, type) {
+        var toast = document.createElement('div');
+        toast.className = 'toast' + (type === 'error' ? ' toast--error' : ' toast--success');
+        toast.textContent = msg;
+        document.getElementById('toast-container').appendChild(toast);
+        setTimeout(function() { toast.remove(); }, 4000);
+    }
+
+    // Initial load
+    loadPins();
+
+    // Open sidebar on mobile by default if new_pin flag is set
+    {{if .NewPin}}
+    document.getElementById('map-sidebar').classList.add('open');
+    {{end}}
+})();
+</script>
+{{end}}
