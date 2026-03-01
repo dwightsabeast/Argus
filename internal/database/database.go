@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/argus-platform/argus/internal/models"
+	"github.com/dwightsabeast/argus/internal/models"
 
 	_ "modernc.org/sqlite"
 )

@@ -2,155 +2,274 @@
 # ============================================================
 # Argus — Proxmox LXC Installer
 # One-command installer following Proxmox community script patterns.
-# Run this on the Proxmox host shell.
+# Run on the Proxmox host shell:
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dwightsabeast/argus/main/install-proxmox.sh)"
 # ============================================================
 set -euo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# --- Colors & helpers ---------------------------------------------------------
+RD='\033[0;31m'; GN='\033[0;32m'; YW='\033[1;33m'; CY='\033[0;36m'; NC='\033[0m'; BLD='\033[1m'
+info()  { echo -e " ${GN}✓${NC} $1"; }
+warn()  { echo -e " ${YW}⚠${NC} $1"; }
+error() { echo -e " ${RD}✗${NC} $1"; exit 1; }
+trap 'echo -e "\n${RD}✗ Failed at line $LINENO: $BASH_COMMAND${NC}"' ERR
 
-header() { echo -e "\n${CYAN}━━━ $1 ━━━${NC}\n"; }
-info() { echo -e "${GREEN}✓${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC} $1"; }
-error() { echo -e "${RED}✗${NC} $1"; exit 1; }
+# --- Pre-flight ---------------------------------------------------------------
+command -v pct &>/dev/null || error "This script must be run on a Proxmox VE host (pct not found)."
+command -v whiptail &>/dev/null || error "whiptail is required but not found."
 
-# Check we're on Proxmox
-command -v pct &>/dev/null || error "This script must be run on a Proxmox host (pct not found)."
+APP="Argus"
+APP_LC="argus"
 
-header "Argus — Surveillance Index & Mapping Platform"
-echo "This installer will create a new LXC container and deploy Argus."
+# --- App defaults (like a community ct/ script header) ------------------------
+var_os="debian"
+var_version="12"
+var_unprivileged="1"
+var_cpu="2"
+var_ram="1024"
+var_disk="8"
+var_data_disk="50"
+var_image_max="20"
+var_federation="false"
+var_tile_source="osm"
+var_net="dhcp"
+var_brg="vmbr0"
+var_hostname="argus"
+
+# ==============================================================================
+# HEADER
+# ==============================================================================
+clear
+cat << 'EOF'
+                                     
+     █████╗ ██████╗  ██████╗ ██╗   ██╗███████╗
+    ██╔══██╗██╔══██╗██╔════╝ ██║   ██║██╔════╝
+    ███████║██████╔╝██║  ███╗██║   ██║███████╗
+    ██╔══██║██╔══██╗██║   ██║██║   ██║╚════██║
+    ██║  ██║██║  ██║╚██████╔╝╚██████╔╝███████║
+    ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝
+     Surveillance Index & Mapping Platform
+                                     
+EOF
+
+echo -e "${CY}This will create an LXC container and deploy ${APP}.${NC}\n"
+
+# ==============================================================================
+# SIMPLE vs ADVANCED
+# ==============================================================================
+if whiptail --backtitle "Argus LXC Installer" --title "CONFIGURATION" \
+   --yesno "Use default settings?\n\n  OS:       Debian 12\n  CPU:      ${var_cpu} cores\n  RAM:      ${var_ram} MB\n  OS Disk:  ${var_disk} GB\n  Data:     ${var_data_disk} GB\n  Network:  DHCP\n\nSelect 'No' for advanced configuration." 18 58; then
+    info "Using default configuration"
+else
+    # --- Advanced: resource allocation ----------------------------------------
+    var_hostname=$(whiptail --backtitle "Argus LXC" --title "HOSTNAME" \
+        --inputbox "Container hostname:" 8 58 "$var_hostname" 3>&1 1>&2 2>&3) || exit
+
+    var_cpu=$(whiptail --backtitle "Argus LXC" --title "CPU CORES" \
+        --inputbox "Number of CPU cores:" 8 58 "$var_cpu" 3>&1 1>&2 2>&3) || exit
+
+    var_ram=$(whiptail --backtitle "Argus LXC" --title "RAM" \
+        --inputbox "RAM in MB:" 8 58 "$var_ram" 3>&1 1>&2 2>&3) || exit
+
+    var_disk=$(whiptail --backtitle "Argus LXC" --title "OS DISK" \
+        --inputbox "OS disk size in GB:" 8 58 "$var_disk" 3>&1 1>&2 2>&3) || exit
+
+    var_data_disk=$(whiptail --backtitle "Argus LXC" --title "DATA VOLUME" \
+        --inputbox "Data volume in GB (images + DB, min 10):" 8 58 "$var_data_disk" 3>&1 1>&2 2>&3) || exit
+
+    if [[ "$var_data_disk" -lt 10 ]]; then
+        if ! whiptail --backtitle "Argus LXC" --title "WARNING" \
+           --yesno "Data volume is under 10 GB.\nThis may fill quickly with image uploads.\n\nContinue anyway?" 10 58; then
+            exit 1
+        fi
+    fi
+
+    # --- Advanced: networking -------------------------------------------------
+    var_net=$(whiptail --backtitle "Argus LXC" --title "NETWORK" \
+        --menu "IP address configuration:" 12 58 2 \
+        "dhcp"   "Automatic (DHCP)" \
+        "static" "Manual static IP" \
+        3>&1 1>&2 2>&3) || exit
+
+    if [[ "$var_net" == "static" ]]; then
+        STATIC_IP=$(whiptail --backtitle "Argus LXC" --title "STATIC IP" \
+            --inputbox "IP address with CIDR (e.g. 192.168.1.26/24):" 8 58 "" 3>&1 1>&2 2>&3) || exit
+
+        # Auto-suggest gateway from the IP (.1)
+        DEFAULT_GW=$(echo "$STATIC_IP" | sed 's|/.*||; s/\.[0-9]*$/.1/')
+        GATEWAY=$(whiptail --backtitle "Argus LXC" --title "GATEWAY" \
+            --inputbox "Gateway IP:" 8 58 "$DEFAULT_GW" 3>&1 1>&2 2>&3) || exit
+    fi
+
+    # --- Advanced: bridge selection -------------------------------------------
+    BRIDGES=$(ip -o link show type bridge 2>/dev/null | awk -F': ' '{print $2}' | tr '\n' ' ')
+    if [[ -n "$BRIDGES" && $(echo "$BRIDGES" | wc -w) -gt 1 ]]; then
+        BRIDGE_MENU=()
+        for b in $BRIDGES; do BRIDGE_MENU+=("$b" ""); done
+        var_brg=$(whiptail --backtitle "Argus LXC" --title "BRIDGE" \
+            --menu "Network bridge:" 14 58 6 "${BRIDGE_MENU[@]}" 3>&1 1>&2 2>&3) || exit
+    fi
+
+    # --- Advanced: Argus-specific settings ------------------------------------
+    var_image_max=$(whiptail --backtitle "Argus LXC" --title "IMAGE LIMIT" \
+        --inputbox "Max image upload size in MB:" 8 58 "$var_image_max" 3>&1 1>&2 2>&3) || exit
+
+    if whiptail --backtitle "Argus LXC" --title "FEDERATION" \
+       --yesno "Enable federation sync endpoints?" 8 58 --defaultno; then
+        var_federation="true"
+    fi
+
+    var_tile_source=$(whiptail --backtitle "Argus LXC" --title "MAP TILES" \
+        --menu "Map tile source:" 12 58 2 \
+        "osm"       "OpenStreetMap (default, requires internet)" \
+        "protomaps" "Self-hosted Protomaps (fully offline)" \
+        3>&1 1>&2 2>&3) || exit
+
+    PROTOMAPS_EP=""
+    if [[ "$var_tile_source" == "protomaps" ]]; then
+        PROTOMAPS_EP=$(whiptail --backtitle "Argus LXC" --title "PROTOMAPS" \
+            --inputbox "Protomaps tile server URL:" 8 58 "http://localhost:8081" 3>&1 1>&2 2>&3) || exit
+    fi
+fi
+
+# ==============================================================================
+# AUTO-DETECT INFRASTRUCTURE
+# ==============================================================================
 echo ""
 
-# --- Prompts with defaults (FRD Section 3.4) ---
-read -rp "Hostname [surveillance-index]: " HOSTNAME
-HOSTNAME=${HOSTNAME:-surveillance-index}
+# Container ID
+CTID=$(pvesh get /cluster/nextid 2>/dev/null)
+# Validate the ID isn't somehow taken (LVM ghost, etc.)
+while [[ -f "/etc/pve/lxc/${CTID}.conf" ]] || [[ -f "/etc/pve/qemu-server/${CTID}.conf" ]]; do
+    CTID=$((CTID + 1))
+done
+info "Container ID: ${CTID}"
 
-read -rp "IP address (or 'dhcp') [dhcp]: " IP_ADDR
-IP_ADDR=${IP_ADDR:-dhcp}
+# Template storage (needs 'vztmpl' content type — typically 'local')
+TMPL_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 {print $1; exit}')
+[[ -z "$TMPL_STORAGE" ]] && error "No storage with 'vztmpl' content type found. Cannot store container templates."
+info "Template storage: ${TMPL_STORAGE}"
 
-read -rp "CPU cores [2]: " CPU
-CPU=${CPU:-2}
+# Container storage (needs 'rootdir' content type — typically 'local-lvm')
+CT_STORAGE=$(pvesm status --content rootdir 2>/dev/null | awk 'NR>1 {print $1; exit}')
+[[ -z "$CT_STORAGE" ]] && error "No storage with 'rootdir' content type found. Cannot create container disks."
+info "Container storage: ${CT_STORAGE}"
 
-read -rp "RAM in MB [1024]: " RAM
-RAM=${RAM:-1024}
+# ==============================================================================
+# DOWNLOAD TEMPLATE
+# ==============================================================================
+TEMPLATE_NAME="debian-12-standard"
+TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1)
 
-read -rp "OS disk size in GB [8]: " OS_DISK
-OS_DISK=${OS_DISK:-8}
-
-read -rp "Data volume size in GB (min 10, for images + DB) [50]: " DATA_DISK
-DATA_DISK=${DATA_DISK:-50}
-
-if [ "$DATA_DISK" -lt 10 ]; then
-    warn "Data volume is less than 10 GB. This may fill quickly with image uploads."
-    read -rp "Continue anyway? [y/N]: " CONFIRM
-    [ "${CONFIRM,,}" = "y" ] || exit 1
-fi
-
-read -rp "Maximum image upload size in MB [20]: " IMAGE_MAX
-IMAGE_MAX=${IMAGE_MAX:-20}
-
-read -rp "Enable federation? (true/false) [false]: " FED_ENABLED
-FED_ENABLED=${FED_ENABLED:-false}
-
-read -rp "Map tile source (osm/protomaps) [osm]: " TILE_SOURCE
-TILE_SOURCE=${TILE_SOURCE:-osm}
-
-PROTOMAPS_EP=""
-if [ "$TILE_SOURCE" = "protomaps" ]; then
-    read -rp "Protomaps endpoint URL: " PROTOMAPS_EP
-fi
-
-# --- Determine next available CT ID ---
-CTID=$(pvesh get /cluster/nextid)
-info "Using container ID: $CTID"
-
-# --- Select storage ---
-STORAGE=$(pvesm status --content rootdir | awk 'NR>1 {print $1; exit}')
-[ -z "$STORAGE" ] && error "No storage found for container rootdir."
-info "Using storage: $STORAGE"
-
-# --- Download template if needed ---
-TEMPLATE="debian-12-standard"
-TEMPLATE_FILE=$(pveam list "$STORAGE" 2>/dev/null | grep "$TEMPLATE" | awk '{print $1}' | head -1)
-if [ -z "$TEMPLATE_FILE" ]; then
+if [[ -z "$TEMPLATE_FILE" ]]; then
     info "Downloading Debian 12 template..."
-    pveam download "$STORAGE" "${TEMPLATE}_12.7-1_amd64.tar.zst" || \
-    pveam download "$STORAGE" $(pveam available | grep "$TEMPLATE" | awk '{print $2}' | head -1)
-    TEMPLATE_FILE=$(pveam list "$STORAGE" | grep "$TEMPLATE" | awk '{print $1}' | head -1)
+    pveam update &>/dev/null || true
+    AVAILABLE=$(pveam available --section system 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $2}' | sort -V | tail -1)
+    [[ -z "$AVAILABLE" ]] && error "Cannot find Debian 12 template. Check internet connectivity."
+    pveam download "$TMPL_STORAGE" "$AVAILABLE" &>/dev/null || error "Template download failed."
+    TEMPLATE_FILE=$(pveam list "$TMPL_STORAGE" 2>/dev/null | grep "$TEMPLATE_NAME" | awk '{print $1}' | sort -V | tail -1)
+    [[ -z "$TEMPLATE_FILE" ]] && error "Template downloaded but not found in storage."
 fi
+info "Template: ${TEMPLATE_FILE}"
 
-# --- Network config ---
-NET_CONFIG="name=eth0,bridge=vmbr0"
-if [ "$IP_ADDR" != "dhcp" ]; then
-    NET_CONFIG="${NET_CONFIG},ip=${IP_ADDR}/24"
+# ==============================================================================
+# BUILD NETWORK CONFIG
+# ==============================================================================
+NET_CONFIG="name=eth0,bridge=${var_brg}"
+if [[ "$var_net" == "static" ]]; then
+    NET_CONFIG="${NET_CONFIG},ip=${STATIC_IP},gw=${GATEWAY}"
 else
     NET_CONFIG="${NET_CONFIG},ip=dhcp"
 fi
 
-# --- Create LXC ---
-header "Creating LXC Container"
+# ==============================================================================
+# CREATE CONTAINER
+# ==============================================================================
+echo ""
+info "Creating LXC container..."
 pct create "$CTID" "$TEMPLATE_FILE" \
-    --hostname "$HOSTNAME" \
-    --cores "$CPU" \
-    --memory "$RAM" \
-    --rootfs "${STORAGE}:${OS_DISK}" \
+    --hostname "$var_hostname" \
+    --cores "$var_cpu" \
+    --memory "$var_ram" \
+    --rootfs "${CT_STORAGE}:${var_disk}" \
     --net0 "$NET_CONFIG" \
-    --unprivileged 1 \
+    --unprivileged "$var_unprivileged" \
     --features nesting=1 \
     --onboot 1 \
-    --start 0
+    --tags "community-script;argus" \
+    --start 0 &>/dev/null
 
-info "Container $CTID created."
+info "Container ${CTID} created."
 
-# --- Add data volume ---
-header "Configuring Data Volume"
-pct set "$CTID" -mp0 "${STORAGE}:${DATA_DISK},mp=/data"
-info "Data volume ${DATA_DISK}GB mounted at /data"
+# --- Attach data volume -------------------------------------------------------
+pct set "$CTID" -mp0 "${CT_STORAGE}:${var_data_disk},mp=/data" &>/dev/null
+info "Data volume: ${var_data_disk} GB mounted at /data"
 
-# --- Start container ---
-pct start "$CTID"
-sleep 3
-info "Container started."
+# --- Start container ----------------------------------------------------------
+pct start "$CTID" &>/dev/null
+info "Container started. Waiting for network..."
+sleep 5
 
-# --- Install Argus inside the container ---
-header "Installing Argus"
+# --- Detect IP after boot (the community-script way) -------------------------
+IP_ADDR=""
+for i in {1..10}; do
+    IP_ADDR=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}') || true
+    [[ -n "$IP_ADDR" ]] && break
+    sleep 2
+done
+[[ -z "$IP_ADDR" ]] && IP_ADDR="(unable to detect — check container networking)"
+info "IP address: ${IP_ADDR}"
+
+# ==============================================================================
+# INSTALL ARGUS INSIDE CONTAINER
+# ==============================================================================
+echo ""
+info "Installing ${APP} inside container..."
 
 pct exec "$CTID" -- bash -c "
     set -euo pipefail
-    
-    # Update and install minimal deps
-    apt-get update -qq
-    apt-get install -y -qq curl ca-certificates
 
-    # Create directories
+    # Minimal deps
+    apt-get update -qq &>/dev/null
+    apt-get install -y -qq curl ca-certificates &>/dev/null
+
+    # Directory structure
     mkdir -p /data/images /data/db /opt/argus/static /opt/argus/templates
 
-    # Download latest Argus binary (placeholder — replace with actual release URL)
-    # curl -sL https://github.com/dwightsabeast/argus/releases/latest/download/argus-linux-amd64 -o /opt/argus/argus
+    # Download binary (placeholder — uncomment for release builds)
+    # ARCH=\$(dpkg --print-architecture)
+    # case \"\$ARCH\" in
+    #     amd64) BINARY=\"argus-linux-amd64\" ;;
+    #     arm64) BINARY=\"argus-linux-arm64\" ;;
+    #     *)     echo \"Unsupported architecture: \$ARCH\"; exit 1 ;;
+    # esac
+    # curl -fsSL \"https://github.com/dwightsabeast/argus/releases/latest/download/\${BINARY}\" -o /opt/argus/argus
     # chmod +x /opt/argus/argus
 
-    echo '#!/bin/bash' > /opt/argus/argus
-    echo 'echo \"Replace this with the actual Argus binary from a release build.\"' >> /opt/argus/argus
+    # Placeholder binary until first release
+    cat > /opt/argus/argus <<'PLACEHOLDER'
+#!/bin/bash
+echo \"Argus placeholder — replace with real binary from GitHub Releases.\"
+echo \"  Build:  cd argus && make build\"
+echo \"  Copy:   pct push ${CTID} ./build/argus /opt/argus/argus\"
+echo \"  Start:  systemctl restart argus\"
+PLACEHOLDER
     chmod +x /opt/argus/argus
 
-    # Write config
-    cat > /opt/argus/argus.env <<EOF
-DATA_PATH=/data/images
-DB_PATH=/data/db/argus.db
+    # Environment config
+    cat > /opt/argus/argus.env <<ENVFILE
 LISTEN_ADDR=:8080
-IMAGE_MAX_SIZE_MB=${IMAGE_MAX}
+DB_PATH=/data/db/argus.db
+DATA_PATH=/data/images
+IMAGE_MAX_SIZE_MB=${var_image_max}
 PAGE_SIZE=50
-FEDERATION_ENABLED=${FED_ENABLED}
-MAP_TILE_SOURCE=${TILE_SOURCE}
-PROTOMAPS_ENDPOINT=${PROTOMAPS_EP}
-EOF
+FEDERATION_ENABLED=${var_federation}
+MAP_TILE_SOURCE=${var_tile_source}
+PROTOMAPS_ENDPOINT=${PROTOMAPS_EP:-}
+ENVFILE
 
-    # Create systemd service
-    cat > /etc/systemd/system/argus.service <<EOF
+    # systemd service
+    cat > /etc/systemd/system/argus.service <<'SERVICE'
 [Unit]
 Description=Argus Surveillance Index
 After=network.target
@@ -165,57 +284,51 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-EOF
+SERVICE
 
     systemctl daemon-reload
-    systemctl enable argus.service
-"
+    systemctl enable argus.service &>/dev/null
+" &>/dev/null
 
-info "Argus installed at /opt/argus"
+info "${APP} installed."
 
-# --- Print summary ---
-header "Installation Complete"
+# ==============================================================================
+# SUMMARY
+# ==============================================================================
+echo ""
+echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${BLD}${APP} LXC created successfully.${NC}"
+echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "  ${BLD}ID:${NC}       ${CTID}"
+echo -e "  ${BLD}Hostname:${NC} ${var_hostname}"
+echo -e "  ${BLD}IP:${NC}       ${IP_ADDR}"
+echo -e "  ${BLD}CPU:${NC}      ${var_cpu} cores"
+echo -e "  ${BLD}RAM:${NC}      ${var_ram} MB"
+echo -e "  ${BLD}OS Disk:${NC}  ${var_disk} GB"
+echo -e "  ${BLD}Data:${NC}     ${var_data_disk} GB → /data"
+echo -e ""
+echo -e "  ${BLD}Access:${NC}   ${GN}http://${IP_ADDR}:8080${NC}"
+echo -e ""
+echo -e "  ${BLD}Next steps:${NC}"
+echo -e "    1. Build or download the Argus binary"
+echo -e "    2. pct push ${CTID} argus-linux-amd64 /opt/argus/argus"
+echo -e "    3. pct exec ${CTID} -- systemctl start argus"
+echo -e "    4. Set up a reverse proxy with TLS"
+echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
-IP_DISPLAY="$IP_ADDR"
-if [ "$IP_ADDR" = "dhcp" ]; then
-    IP_DISPLAY=$(pct exec "$CTID" -- hostname -I 2>/dev/null | awk '{print $1}' || echo "(check DHCP)")
-fi
-
-cat <<SUMMARY
-    Container ID:    $CTID
-    Hostname:        $HOSTNAME
-    IP Address:      $IP_DISPLAY
-    CPU Cores:       $CPU
-    RAM:             ${RAM} MB
-    OS Disk:         ${OS_DISK} GB
-    Data Volume:     ${DATA_DISK} GB (mounted at /data)
-    Max Image Size:  ${IMAGE_MAX} MB
-    Federation:      $FED_ENABLED
-    Tile Source:     $TILE_SOURCE
-    
-    Access Argus at: http://${IP_DISPLAY}:8080
-    
-    Next steps:
-    1. Copy the Argus binary and static assets to /opt/argus/
-    2. Start the service: pct exec $CTID -- systemctl start argus
-    3. Set up a reverse proxy with TLS for production use.
-SUMMARY
-
-# Write summary inside LXC
+# Write summary inside the LXC
 pct exec "$CTID" -- bash -c "cat > /root/README.txt <<EOF
 Argus Surveillance Index — Deployment Summary
 ==============================================
-Container: $CTID ($HOSTNAME)
-IP: $IP_DISPLAY
-Data: /data (${DATA_DISK}GB)
+Container: ${CTID} (${var_hostname})
+IP: ${IP_ADDR}
+Data: /data (${var_data_disk} GB)
 Config: /opt/argus/argus.env
 Service: systemctl {start|stop|status} argus
 Logs: journalctl -u argus -f
 
 To expand data volume later:
-  1. pct resize $CTID mp0 +50G   (on Proxmox host)
-  2. resize2fs /dev/...           (inside LXC)
-EOF"
-
-info "Summary written to /root/README.txt inside the LXC."
-echo ""
+  pct resize ${CTID} mp0 +50G   (on Proxmox host)
+  pct exec ${CTID} -- resize2fs /dev/sdb1
+EOF" &>/dev/null || true

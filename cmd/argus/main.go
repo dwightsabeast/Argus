@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/argus-platform/argus/internal/config"
-	"github.com/argus-platform/argus/internal/database"
-	"github.com/argus-platform/argus/internal/handlers"
-	"github.com/argus-platform/argus/internal/middleware"
-	"github.com/argus-platform/argus/internal/models"
-	"github.com/argus-platform/argus/internal/storage"
+	"github.com/dwightsabeast/argus/internal/config"
+	"github.com/dwightsabeast/argus/internal/database"
+	"github.com/dwightsabeast/argus/internal/handlers"
+	"github.com/dwightsabeast/argus/internal/middleware"
+	"github.com/dwightsabeast/argus/internal/models"
+	"github.com/dwightsabeast/argus/internal/storage"
 )
 
 func main() {

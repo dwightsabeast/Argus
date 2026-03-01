@@ -1,4 +1,4 @@
-module github.com/argus-platform/argus
+module github.com/dwightsabeast/argus
 
 go 1.22
 

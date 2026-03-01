@@ -47,7 +47,7 @@ Run the one-command installer on your Proxmox host:
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/dwightsabeast/argus/main/install-proxmox.sh)"
 ```
 
-The installer will prompt for hostname, IP, resource allocation, and storage sizing, then create and configure the LXC automatically.
+The installer will prompt for hostname, IP address, gateway (for static IPs), resource allocation, and storage sizing, then create and configure the LXC automatically.
 
 ## Configuration
 

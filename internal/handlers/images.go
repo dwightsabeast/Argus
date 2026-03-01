@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/argus-platform/argus/internal/middleware"
-	"github.com/argus-platform/argus/internal/models"
-	"github.com/argus-platform/argus/internal/storage"
+	"github.com/dwightsabeast/argus/internal/middleware"
+	"github.com/dwightsabeast/argus/internal/models"
+	"github.com/dwightsabeast/argus/internal/storage"
 
 	"crypto/rand"
 	"encoding/hex"

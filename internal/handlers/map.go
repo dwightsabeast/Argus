@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/argus-platform/argus/internal/middleware"
-	"github.com/argus-platform/argus/internal/models"
+	"github.com/dwightsabeast/argus/internal/middleware"
+	"github.com/dwightsabeast/argus/internal/models"
 )
 
 // MapView handles GET /map (FR-M-01).
