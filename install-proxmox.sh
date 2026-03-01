@@ -130,7 +130,7 @@ pct exec "$CTID" -- bash -c "
     mkdir -p /data/images /data/db /opt/argus/static /opt/argus/templates
 
     # Download latest Argus binary (placeholder — replace with actual release URL)
-    # curl -sL https://github.com/argus-platform/argus/releases/latest/download/argus-linux-amd64 -o /opt/argus/argus
+    # curl -sL https://github.com/dwightsabeast/argus/releases/latest/download/argus-linux-amd64 -o /opt/argus/argus
     # chmod +x /opt/argus/argus
 
     echo '#!/bin/bash' > /opt/argus/argus
