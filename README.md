@@ -71,12 +71,12 @@ All settings are controlled via environment variables or a single `.env` file:
 ┌─────────────────────────────────────┐
 │         Proxmox LXC Container       │
 │                                     │
-│  ┌───────────┐   ┌──────────────┐  │
+│  ┌────────────┐   ┌──────────────┐  │
 │  │  Reverse   │   │    Argus     │  │
 │  │  Proxy     │──▶│  Go Binary   │  │
 │  │  (Caddy/   │   │              │  │
 │  │   Nginx)   │   │  ┌────────┐  │  │
-│  └───────────┘   │  │ SQLite │  │  │
+│  └────────────┘   │  │ SQLite │  │  │
 │                   │  └────────┘  │  │
 │                   │  ┌────────┐  │  │
 │                   │  │ Images │  │  │
@@ -159,11 +159,3 @@ argus/
 | GET | `/api/v1/profiles` | All profiles (paginated) |
 | GET | `/api/v1/pins` | All pins (paginated) |
 | GET | `/api/v1/since?timestamp=X` | Records modified since timestamp |
-
-## Contributing
-
-Pull requests, bug reports, and security disclosures are actively welcomed. This project values transparency and community review.
-
-## License
-
-TBD — to be determined by the project maintainers.
