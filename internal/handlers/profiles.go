@@ -20,7 +20,7 @@ type App struct {
 	DB     *database.DB
 	Store  storage.ImageStore
 	Config *config.Config
-	Tmpl   *template.Template
+	Tmpl   map[string]*template.Template
 }
 
 // ProfileList handles GET / and GET /profiles (FR-B-01, FR-P-02).
@@ -309,7 +309,18 @@ func profileFromForm(r *http.Request) *models.Profile {
 }
 
 func (app *App) render(w http.ResponseWriter, name string, data interface{}) {
-	if err := app.Tmpl.ExecuteTemplate(w, name, data); err != nil {
+	t, ok := app.Tmpl[name]
+	if !ok {
+		log.Printf("ERROR: template %q not found", name)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	// Page templates include the base layout; fragments don't.
+	execName := "layout"
+	if t.Lookup("layout") == nil {
+		execName = name
+	}
+	if err := t.ExecuteTemplate(w, execName, data); err != nil {
 		log.Printf("ERROR rendering template %s: %v", name, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}

@@ -278,6 +278,7 @@ pct exec "$CTID" -- bash -c '
     export GOCACHE="/tmp/go-cache"
     cd /tmp/argus-build
 
+    CGO_ENABLED=0 go mod tidy
     CGO_ENABLED=0 go build -o /opt/argus/argus ./cmd/argus/
 ' &>/dev/null
 

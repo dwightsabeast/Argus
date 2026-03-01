@@ -157,7 +157,7 @@ func main() {
 }
 
 // loadTemplates parses all HTML templates with custom functions.
-func loadTemplates() *template.Template {
+func loadTemplates() map[string]*template.Template {
 	funcMap := template.FuncMap{
 		"lower": strings.ToLower,
 		"truncate": func(max int, s string) string {
@@ -199,27 +199,41 @@ func loadTemplates() *template.Template {
 		"printf": fmt.Sprintf,
 	}
 
-	tmpl := template.New("").Funcs(funcMap)
+	templates := make(map[string]*template.Template)
+	baseLayout := "templates/layouts/base.html"
 
-	// Parse all template files
-	patterns := []string{
-		"templates/layouts/*.html",
-		"templates/profiles/*.html",
-		"templates/map/*.html",
-		"templates/partials/*.html",
+	// Page templates: each is parsed independently with the base layout
+	// so their {{define "content"}}, {{define "title"}}, etc. don't collide.
+	pages := map[string][]string{
+		"profile_list":   {baseLayout, "templates/profiles/list.html", "templates/profiles/list_partial.html"},
+		"profile_detail": {baseLayout, "templates/profiles/detail.html"},
+		"profile_form":   {baseLayout, "templates/profiles/form.html"},
+		"map_view":       {baseLayout, "templates/map/index.html"},
 	}
 
-	for _, pattern := range patterns {
-		files, err := filepath.Glob(pattern)
+	for name, files := range pages {
+		t := template.New("").Funcs(funcMap)
+		t, err := t.ParseFiles(files...)
 		if err != nil {
-			log.Fatalf("Error globbing templates %s: %v", pattern, err)
+			log.Fatalf("Error parsing template %s: %v", name, err)
 		}
-		for _, f := range files {
-			if _, err := tmpl.ParseFiles(f); err != nil {
-				log.Fatalf("Error parsing template %s: %v", f, err)
-			}
-		}
+		templates[name] = t
 	}
 
-	return tmpl
+	// Fragment templates: no layout, parsed standalone.
+	fragments := map[string]string{
+		"profile_list_partial":   "templates/profiles/list_partial.html",
+		"profile_search_results": "templates/profiles/search_results.html",
+	}
+
+	for name, fragFile := range fragments {
+		t := template.New("").Funcs(funcMap)
+		t, err := t.ParseFiles(fragFile)
+		if err != nil {
+			log.Fatalf("Error parsing fragment template %s (%s): %v", name, fragFile, err)
+		}
+		templates[name] = t
+	}
+
+	return templates
 }
